@@ -1,0 +1,18 @@
+# General
+.DS_Store
+*.log
+
+# Env
+.env.local
+.env
+
+# Node/Next
+node_modules/
+.next/
+out/
+coverage/
+.vercel/
+
+# Project
+/webchat/node_modules/
+/webchat/.next/
