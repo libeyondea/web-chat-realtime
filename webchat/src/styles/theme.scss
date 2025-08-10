@@ -1,0 +1,11 @@
+$brand: #6366f1;
+
+:root {
+  --brand: #{$brand};
+}
+
+.btn-brand {
+  @apply btn;
+  background-color: var(--brand);
+  color: white;
+}
