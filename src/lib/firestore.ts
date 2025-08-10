@@ -16,10 +16,10 @@ import {
   type Unsubscribe,
   type DocumentData,
   type QueryDocumentSnapshot,
+  type CollectionReference,
 } from 'firebase/firestore'
 import type { Message, Room, TypingState, UserProfile } from '@/types'
-import { db } from './firebase'
-import { isMock } from './firebase'
+import { db, isMock } from './firebase'
 
 // In-memory stores for mock mode
 const mock = {
@@ -29,13 +29,17 @@ const mock = {
   typing: new Map<string, TypingState[]>(),
 }
 
-export const usersCol = db ? collection(db, 'users') : (null as any)
-export const roomsCol = db ? collection(db, 'rooms') : (null as any)
+export const usersCol: CollectionReference<DocumentData> | null = db
+  ? collection(db, 'users')
+  : null
+export const roomsCol: CollectionReference<DocumentData> | null = db
+  ? collection(db, 'rooms')
+  : null
 
 /** Lấy hồ sơ người dùng theo UID */
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
   if (isMock) return mock.users.get(uid) || null
-  const ref = doc(usersCol, uid)
+  const ref = doc(usersCol!, uid)
   const snap = await getDoc(ref)
   return snap.exists() ? (snap.data() as unknown as UserProfile) : null
 }
@@ -46,7 +50,7 @@ export const upsertUserProfile = async (profile: UserProfile): Promise<void> => 
     mock.users.set(profile.uid, profile)
     return
   }
-  const ref = doc(usersCol, profile.uid)
+  const ref = doc(usersCol!, profile.uid)
   await setDoc(ref, { ...profile }, { merge: true })
 }
 
@@ -58,7 +62,7 @@ export const createRoom = async (name: string, createdBy: string): Promise<strin
     mock.messages.set(id, [])
     return id
   }
-  const ref = await addDoc(roomsCol, {
+  const ref = await addDoc(roomsCol!, {
     name,
     createdBy,
     createdAt: serverTimestamp(),
@@ -89,13 +93,14 @@ const mapRoom = (d: QueryDocumentSnapshot<DocumentData>): Room => {
 /** Liệt kê tất cả phòng chat */
 export const listRooms = async (): Promise<Room[]> => {
   if (isMock) return Array.from(mock.rooms.values()).sort((a, b) => a.createdAt - b.createdAt)
-  const qs = await getDocs(query(roomsCol, orderBy('createdAt', 'asc')))
+  const qs = await getDocs(query(roomsCol!, orderBy('createdAt', 'asc')))
   return qs.docs.map((d) => mapRoom(d as QueryDocumentSnapshot<DocumentData>))
 }
 
 export const messagesCol = (roomId: string) =>
   db ? collection(db, `rooms/${roomId}/messages`) : null
-export const typingCol = (roomId: string) => (db ? collection(db, `rooms/${roomId}/typing`) : null)
+export const typingCol = (roomId: string) =>
+  db ? collection(db, `rooms/${roomId}/typing`) : null
 
 export type MessagesPage = {
   docs: QueryDocumentSnapshot<DocumentData>[]
@@ -256,7 +261,7 @@ export const updateLastActive = async (uid: string): Promise<void> => {
     if (u) mock.users.set(uid, { ...u, lastActive: Date.now() })
     return
   }
-  const ref = doc(usersCol, uid)
+  const ref = doc(usersCol!, uid)
   await setDoc(
     ref,
     {

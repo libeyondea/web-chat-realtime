@@ -8,9 +8,8 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { auth, googleProvider } from '@/lib/firebase'
+import { auth, googleProvider, isMock } from '@/lib/firebase'
 import { upsertUserProfile } from '@/lib/firestore'
-import { isMock } from '@/lib/firebase'
 
 export type AuthContextValue = {
   user: User | null
