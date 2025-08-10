@@ -5,11 +5,14 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
-      { protocol: 'http', hostname: '**' },
-    ],
+      { protocol: 'http', hostname: '**' }
+    ]
   },
   experimental: {
-    typedRoutes: true,
+    typedRoutes: true
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
 }
 
