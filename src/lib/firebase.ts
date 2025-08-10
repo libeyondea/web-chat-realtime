@@ -1,8 +1,6 @@
 // Firebase initialization and exported helpers
 // Loads config from environment variables defined in .env.local
 // Chú ý: Yêu cầu cấu hình biến môi trường NEXT_PUBLIC_FIREBASE_*
-
-
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider, type Auth } from 'firebase/auth'
 import { getFirestore, type Firestore } from 'firebase/firestore'
