@@ -14,5 +14,3 @@ coverage/
 .vercel/
 
 # Project
-/webchat/node_modules/
-/webchat/.next/
