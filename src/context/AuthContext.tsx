@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth'
 import { auth, googleProvider } from '@/lib/firebase'
 import { upsertUserProfile } from '@/lib/firestore'
+import { isMock } from '@/lib/firebase'
 
 export type AuthContextValue = {
   user: User | null
@@ -31,7 +32,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    if (isMock) {
+      // Provide a mock user for local/demo without Firebase
+      const fake = {
+        uid: 'mock-user',
+        displayName: 'Mock User',
+        email: 'mock@example.com',
+        photoURL: undefined,
+      } as unknown as User
+      setUser(fake)
+      setLoading(false)
+      void upsertUserProfile({
+        uid: fake.uid,
+        displayName: fake.displayName || 'Mock User',
+        email: fake.email || 'mock@example.com',
+        photoURL: undefined,
+        createdAt: Date.now(),
+        lastActive: Date.now(),
+      })
+      return
+    }
+    const unsub = onAuthStateChanged(auth!, async (u) => {
       setUser(u)
       setLoading(false)
       if (u) {
@@ -62,19 +83,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       loading,
       signInWithGoogle: async () => {
-        await signInWithPopup(auth, googleProvider)
+        if (isMock) return
+        await signInWithPopup(auth!, googleProvider)
       },
       signInWithEmail: async (email: string, password: string) => {
-        await signInWithEmailAndPassword(auth, email, password)
+        if (isMock) return
+        await signInWithEmailAndPassword(auth!, email, password)
       },
       signUpWithEmail: async (email: string, password: string, displayName: string) => {
-        const cred = await createUserWithEmailAndPassword(auth, email, password)
+        if (isMock) return
+        const cred = await createUserWithEmailAndPassword(auth!, email, password)
         if (cred.user) {
           await updateProfile(cred.user, { displayName })
         }
       },
       logout: async () => {
-        await signOut(auth)
+        if (isMock) return
+        await signOut(auth!)
       },
     }),
     [user, loading]

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { db, isMock } from '@/lib/firebase'
 import type { UserProfile } from '@/types'
 
 const ONLINE_WINDOW_MS = 60 * 1000
@@ -13,6 +13,20 @@ export const useOnlineUsers = () => {
   const [users, setUsers] = useState<UserProfile[]>([])
 
   useEffect(() => {
+    if (isMock || !db) {
+      // Provide empty/mock list in mock mode
+      setUsers([
+        {
+          uid: 'mock-user',
+          displayName: 'Mock User',
+          email: 'mock@example.com',
+          photoURL: undefined,
+          createdAt: Date.now(),
+          lastActive: Date.now(),
+        },
+      ])
+      return
+    }
     const unsub = onSnapshot(collection(db, 'users'), (snap) => {
       const items = snap.docs.map((d) => d.data() as unknown as UserProfile)
       setUsers(

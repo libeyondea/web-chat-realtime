@@ -19,12 +19,22 @@ import {
 } from 'firebase/firestore'
 import type { Message, Room, TypingState, UserProfile } from '@/types'
 import { db } from './firebase'
+import { isMock } from './firebase'
 
-export const usersCol = collection(db, 'users')
-export const roomsCol = collection(db, 'rooms')
+// In-memory stores for mock mode
+const mock = {
+  users: new Map<string, UserProfile>(),
+  rooms: new Map<string, Room>(),
+  messages: new Map<string, Message[]>(),
+  typing: new Map<string, TypingState[]>(),
+}
+
+export const usersCol = db ? collection(db, 'users') : (null as any)
+export const roomsCol = db ? collection(db, 'rooms') : (null as any)
 
 /** Lấy hồ sơ người dùng theo UID */
 export const getUserProfile = async (uid: string): Promise<UserProfile | null> => {
+  if (isMock) return mock.users.get(uid) || null
   const ref = doc(usersCol, uid)
   const snap = await getDoc(ref)
   return snap.exists() ? (snap.data() as unknown as UserProfile) : null
@@ -32,12 +42,22 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
 
 /** Tạo/cập nhật hồ sơ người dùng */
 export const upsertUserProfile = async (profile: UserProfile): Promise<void> => {
+  if (isMock) {
+    mock.users.set(profile.uid, profile)
+    return
+  }
   const ref = doc(usersCol, profile.uid)
   await setDoc(ref, { ...profile }, { merge: true })
 }
 
 /** Tạo phòng chat mới */
 export const createRoom = async (name: string, createdBy: string): Promise<string> => {
+  if (isMock) {
+    const id = `room_${mock.rooms.size + 1}`
+    mock.rooms.set(id, { id, name, createdBy, createdAt: Date.now() })
+    mock.messages.set(id, [])
+    return id
+  }
   const ref = await addDoc(roomsCol, {
     name,
     createdBy,
@@ -50,8 +70,9 @@ const toMillis = (value: unknown): number => {
   if (!value) return Date.now()
   if (typeof value === 'number') return value
   if (value instanceof Timestamp) return value.toMillis()
-  // @ts-expect-error dynamic check for Timestamp-like
-  if (typeof value.toMillis === 'function') return value.toMillis()
+  if (typeof (value as { toMillis?: () => number }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis()
+  }
   return Date.now()
 }
 
@@ -67,12 +88,14 @@ const mapRoom = (d: QueryDocumentSnapshot<DocumentData>): Room => {
 
 /** Liệt kê tất cả phòng chat */
 export const listRooms = async (): Promise<Room[]> => {
+  if (isMock) return Array.from(mock.rooms.values()).sort((a, b) => a.createdAt - b.createdAt)
   const qs = await getDocs(query(roomsCol, orderBy('createdAt', 'asc')))
-  return qs.docs.map((d) => mapRoom(d))
+  return qs.docs.map((d) => mapRoom(d as QueryDocumentSnapshot<DocumentData>))
 }
 
-export const messagesCol = (roomId: string) => collection(db, `rooms/${roomId}/messages`)
-export const typingCol = (roomId: string) => collection(db, `rooms/${roomId}/typing`)
+export const messagesCol = (roomId: string) =>
+  db ? collection(db, `rooms/${roomId}/messages`) : null
+export const typingCol = (roomId: string) => (db ? collection(db, `rooms/${roomId}/typing`) : null)
 
 export type MessagesPage = {
   docs: QueryDocumentSnapshot<DocumentData>[]
@@ -98,7 +121,13 @@ export const fetchMessagesPage = async (
   pageSize: number,
   cursor?: QueryDocumentSnapshot<DocumentData>
 ): Promise<MessagesPage> => {
-  const base = query(messagesCol(roomId), orderBy('createdAt', 'desc'), limit(pageSize))
+  if (isMock) {
+    const arr = mock.messages.get(roomId) || []
+    const sorted = [...arr].sort((a, b) => b.createdAt - a.createdAt)
+    const items = sorted.slice(0, pageSize)
+    return { docs: [], lastVisible: null, items }
+  }
+  const base = query(messagesCol(roomId)!, orderBy('createdAt', 'desc'), limit(pageSize))
   const q = cursor ? query(base, startAfter(cursor)) : base
   const qs = await getDocs(q)
   const items = qs.docs.map((d) => mapMessage(d))
@@ -114,7 +143,12 @@ export const subscribeLatestMessages = (
   onChange: (messages: Message[]) => void,
   pageSize = 50
 ): Unsubscribe => {
-  const qy = query(messagesCol(roomId), orderBy('createdAt', 'asc'), limit(pageSize))
+  if (isMock) {
+    // naive no-op subscriber; push current state immediately
+    setTimeout(() => onChange((mock.messages.get(roomId) || []).slice(-pageSize)), 0)
+    return () => {}
+  }
+  const qy = query(messagesCol(roomId)!, orderBy('createdAt', 'asc'), limit(pageSize))
   return onSnapshot(qy, (snap) => {
     const items = snap.docs.map((d) => mapMessage(d))
     onChange(items)
@@ -127,7 +161,13 @@ export const sendTextMessage = async (
   userId: string,
   text: string
 ): Promise<void> => {
-  await addDoc(messagesCol(roomId), {
+  if (isMock) {
+    const arr = mock.messages.get(roomId) || []
+    arr.push({ id: `m_${Date.now()}`, roomId, userId, text, createdAt: Date.now() })
+    mock.messages.set(roomId, arr)
+    return
+  }
+  await addDoc(messagesCol(roomId)!, {
     userId,
     text,
     createdAt: serverTimestamp(),
@@ -141,7 +181,13 @@ export const sendImageMessage = async (
   userId: string,
   imageUrl: string
 ): Promise<void> => {
-  await addDoc(messagesCol(roomId), {
+  if (isMock) {
+    const arr = mock.messages.get(roomId) || []
+    arr.push({ id: `m_${Date.now()}`, roomId, userId, imageUrl, createdAt: Date.now() })
+    mock.messages.set(roomId, arr)
+    return
+  }
+  await addDoc(messagesCol(roomId)!, {
     userId,
     imageUrl,
     createdAt: serverTimestamp(),
@@ -155,7 +201,16 @@ export const setTyping = async (
   userId: string,
   isTyping: boolean
 ): Promise<void> => {
-  const ref = doc(typingCol(roomId), userId)
+  if (isMock) {
+    const arr = mock.typing.get(roomId) || []
+    const others = arr.filter((t) => t.userId !== userId)
+    const next = isTyping
+      ? [...others, { userId, roomId, isTyping, updatedAt: Date.now() }]
+      : others
+    mock.typing.set(roomId, next)
+    return
+  }
+  const ref = doc(typingCol(roomId)!, userId)
   await setDoc(
     ref,
     {
@@ -183,7 +238,11 @@ export const subscribeTyping = (
   roomId: string,
   onChange: (states: TypingState[]) => void
 ): Unsubscribe => {
-  const qy = query(typingCol(roomId), where('isTyping', '==', true))
+  if (isMock) {
+    setTimeout(() => onChange(mock.typing.get(roomId) || []), 0)
+    return () => {}
+  }
+  const qy = query(typingCol(roomId)!, where('isTyping', '==', true))
   return onSnapshot(qy, (snap) => {
     const items = snap.docs.map((d) => mapTyping(d))
     onChange(items)
@@ -192,6 +251,11 @@ export const subscribeTyping = (
 
 /** Cập nhật thời điểm hoạt động gần nhất (presence) */
 export const updateLastActive = async (uid: string): Promise<void> => {
+  if (isMock) {
+    const u = mock.users.get(uid)
+    if (u) mock.users.set(uid, { ...u, lastActive: Date.now() })
+    return
+  }
   const ref = doc(usersCol, uid)
   await setDoc(
     ref,
